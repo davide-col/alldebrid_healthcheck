@@ -53,7 +53,7 @@ builder.defineStreamHandler(async (args) => {
                 title: '🔴 AllDebrid is DOWN',
                 url: 'https://api.alldebrid.com/v4/ping'
             }]
-        }
+        } 
     }
     
     console.log('[Response] AllDebrid UP - allowing addons to proceed')
