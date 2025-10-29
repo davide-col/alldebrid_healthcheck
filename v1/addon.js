@@ -46,15 +46,23 @@ builder.defineStreamHandler(async (args) => {
     
     if (!isHealthy) {
         console.log('[Response] AllDebrid DOWN - blocking all addons')
-        return { streams: [] }
+        //return { streams: [] }
+        return { 
+            streams: [{
+                name: '✅ AllDebrid',
+                title: 'AllDebrid API is UP',
+                url: 'https://api.alldebrid.com/v4/ping'
+            }]
+        }
     }
     
     console.log('[Response] AllDebrid UP - allowing addons to proceed')
     // Return a dummy stream that AIOStreams can detect
     return { 
         streams: [{
-            name: '✓ AllDebrid',
-            title: 'AllDebrid API is UP',
+            //name: '✓ AllDebrid',
+            name: '❌ AllDebrid',
+            title: 'AllDebrid API is DOWN',
             url: 'https://api.alldebrid.com/v4/ping'
         }]
     }

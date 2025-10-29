@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚙️ Configure Debrid Health Check</title>
+<style>
+    body {
+        font-family: 'Segoe UI', sans-serif;
+        background-color: #121212;
+        color: #fff;
+        margin: 0;
+        padding: 0;
+    }
+    .container {
+        max-width: 800px;
+        margin: 40px auto;
+        background-color: #1e1e1e;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+    h1 {
+        text-align: center;
+        font-size: 1.8em;
+        background: linear-gradient(90deg, #a971ff, #6b8cff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 20px;
+    }
+    .instructions {
+        background: #2a2a2a;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+        font-size: 0.9em;
+        line-height: 1.6;
+    }
+    .service {
+        background: #2b2b2b;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        border: 1px solid #3a3a3a;
+    }
+    label {
+        display: block;
+        margin-top: 10px;
+        font-weight: 500;
+    }
+    input[type="text"], input[type="number"], select {
+        width: 100%;
+        background: #1a1a1a;
+        color: #fff;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        padding: 6px;
+        margin-top: 5px;
+    }
+    input[type="checkbox"] {
+        margin-right: 5px;
+    }
+    button {
+        background: #3ab15a;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 1em;
+        margin-top: 12px;
+        cursor: pointer;
+    }
+    button:hover {
+        background: #4bc26b;
+    }
+    .remove {
+        background: #e04b4b;
+    }
+    .remove:hover {
+        background: #f05d5d;
+    }
+    .generate {
+        background: #8056f5;
+    }
+    .generate:hover {
+        background: #946cff;
+    }
+    .install-url {
+        background: #222;
+        padding: 10px;
+        border-radius: 6px;
+        word-break: break-all;
+        margin-top: 10px;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>🔧 Configure Debrid Health Check</h1>
+    <div class="instructions">
+        <strong>How to use:</strong>
+        <ol>
+            <li>Add debrid services to monitor</li>
+            <li>Configure each service</li>
+            <li>Generate install URL</li>
+            <li>Use with Stremio</li>
+        </ol>
+    </div>
+
+    <h2>Services</h2>
+    <div id="services"></div>
+    <button id="addService">+ Add Service</button>
+
+    <div style="margin-top:20px;">
+        <button class="generate" id="generateURL">🧩 Generate Install URL</button>
+        <div id="installURL" class="install-url"></div>
+    </div>
+</div>
+
+<script>
+const DEFAULT_SERVICES = {
+    AllDebrid: {
+        pingUrl: 'https://api.alldebrid.com/v4/ping'
+    },
+    RealDebrid: {
+        pingUrl: 'https://api.real-debrid.com/rest/1.0/time'
+    }
+};
+
+function createServiceCard(id, data = {}) {
+    const div = document.createElement('div');
+    div.className = 'service';
+    div.innerHTML = `
+        <label>Service Type:
+            <select class="service-type">
+                <option value="AllDebrid" ${data.serviceType === 'AllDebrid' ? 'selected' : ''}>AllDebrid</option>
+                <option value="RealDebrid" ${data.serviceType === 'RealDebrid' ? 'selected' : ''}>RealDebrid</option>
+            </select>
+        </label>
+        <label>Ping URL:
+            <input type="text" class="ping-url" value="${data.pingUrl || ''}">
+        </label>
+        <label>Timeout (seconds):
+            <input type="number" class="timeout" value="${data.timeout || 5}">
+        </label>
+        <label><input type="checkbox" class="enabled" ${data.enabled !== false ? 'checked' : ''}> Enabled</label>
+        <label><input type="checkbox" class="show-success" ${data.showSuccess !== false ? 'checked' : ''}> Show success message</label>
+        <label><input type="checkbox" class="show-error" ${data.showError !== false ? 'checked' : ''}> Show error message</label>
+        <button class="remove">Remove Service</button>
+    `;
+
+    div.querySelector('.service-type').addEventListener('change', (e) => {
+        const type = e.target.value;
+        div.querySelector('.ping-url').value = DEFAULT_SERVICES[type].pingUrl;
+    });
+
+    div.querySelector('.remove').addEventListener('click', () => {
+        div.remove();
+    });
+
+    return div;
+}
+
+document.getElementById('addService').addEventListener('click', () => {
+    document.getElementById('services').appendChild(createServiceCard(Date.now()));
+});
+
+// Add default service initially
+document.getElementById('services').appendChild(createServiceCard(Date.now(), {
+    serviceType: 'AllDebrid',
+    pingUrl: DEFAULT_SERVICES.AllDebrid.pingUrl
+}));
+
+document.getElementById('generateURL').addEventListener('click', () => {
+    const serviceCards = document.querySelectorAll('.service');
+    const services = Array.from(serviceCards).map(card => ({
+        id: card.querySelector('.service-type').value.toLowerCase(),
+        enabled: card.querySelector('.enabled').checked,
+        pingUrl: card.querySelector('.ping-url').value,
+        showSuccess: card.querySelector('.show-success').checked,
+        showError: card.querySelector('.show-error').checked,
+        timeout: parseInt(card.querySelector('.timeout').value) * 1000
+    }));
+
+    const base = window.location.origin + '/manifest.json';
+    const url = `${base}?services=${encodeURIComponent(JSON.stringify(services))}`;
+    document.getElementById('installURL').textContent = url;
+});
+</script>
+</body>
+</html>
