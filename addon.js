@@ -1,95 +1,104 @@
-const { addonBuilder, getRouter } = require('stremio-addon-sdk')
-const https = require('https')
-const http = require('http')
-const landingHTML = require('./landingHTML')
+const { addonBuilder, serveHTTP, getRouter } = require('stremio-addon-sdk');
+const https = require('https');
+const http = require('http');
+const express = require('express');
 
-// Defaults
 const DEFAULT_SERVICES = {
-  alldebrid: { name: 'AllDebrid', pingUrl: 'https://api.alldebrid.com/v4/ping' },
-  realdebrid: { name: 'Real-Debrid', pingUrl: 'https://api.real-debrid.com/rest/1.0/time' }
-}
+  alldebrid: {
+    name: 'AllDebrid',
+    pingUrl: 'https://api.alldebrid.com/v4/ping'
+  },
+  realdebrid: {
+    name: 'Real-Debrid',
+    pingUrl: 'https://api.real-debrid.com/rest/1.0/time'
+  }
+};
 
-// Minimal manifest
 const manifest = {
   id: 'com.debrid.healthcheck',
-  version: '2.0.0',
+  version: '2.0.1',
   name: 'Debrid Health Check',
-  description: 'Check multiple debrid services',
+  description: 'Check AllDebrid and RealDebrid availability',
   resources: ['stream'],
   types: ['movie', 'series'],
   idPrefixes: ['tt'],
   catalogs: []
+};
+
+const builder = new addonBuilder(manifest);
+
+async function checkServiceHealth(service) {
+  return new Promise((resolve) => {
+    const url = new URL(service.pingUrl);
+    const client = url.protocol === 'https:' ? https : http;
+
+    const req = client.get(service.pingUrl, (res) => {
+      resolve({ healthy: res.statusCode === 200 });
+    });
+
+    req.on('error', () => resolve({ healthy: false }));
+    req.setTimeout(service.timeout || 5000, () => {
+      req.destroy();
+      resolve({ healthy: false });
+    });
+  });
 }
 
-const builder = new addonBuilder(manifest)
+builder.defineStreamHandler(async (args) => {
+  const query = args.config || {};
+  let services = [];
 
-// Robust config normalizer (accepts stringified or object)
-function normalizeConfig(args) {
-  const cfg = args?.config || {}
-  let services = cfg.services
-  if (typeof services === 'string') {
-    try { services = JSON.parse(services) } catch { services = null }
-  }
-  if (!Array.isArray(services)) {
-    services = [{
-      id: 'alldebrid',
+  try {
+    services = query.services ? JSON.parse(query.services) : Object.keys(DEFAULT_SERVICES).map(id => ({
+      id,
       enabled: true,
-      pingUrl: DEFAULT_SERVICES.alldebrid.pingUrl,
+      pingUrl: DEFAULT_SERVICES[id].pingUrl,
       showSuccess: true,
       showError: true,
       timeout: 5000
-    }]
+    }));
+  } catch (e) {
+    services = [];
   }
-  return services
-}
 
-// Simple HEAD/GET health check
-async function checkServiceHealth(service) {
-  return new Promise((resolve) => {
-    const url = new URL(service.pingUrl)
-    const client = url.protocol === 'https:' ? https : http
-    const req = client.get(service.pingUrl, (res) => resolve({ healthy: res.statusCode === 200 }))
-    req.on('error', () => resolve({ healthy: false }))
-    req.setTimeout(service.timeout || 5000, () => { req.destroy(); resolve({ healthy: false }) })
-  })
-}
+  const streams = [];
 
-// Streams handler
-builder.defineStreamHandler(async (args) => {
-  const services = normalizeConfig(args)
-  const streams = []
   for (const service of services) {
-    if (!service.enabled) continue
-    const result = await checkServiceHealth(service)
-    if (!result.healthy && service.showError) {
+    if (!service.enabled) continue;
+    const result = await checkServiceHealth(service);
+
+    const svcName = DEFAULT_SERVICES[service.id]?.name || service.id;
+    if (result.healthy && service.showSuccess) {
       streams.push({
-        name: `⚠️ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
-        title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is DOWN`,
+        name: `✅ ${svcName}`,
+        title: `${svcName} is UP`,
         url: service.pingUrl
-      })
-    } else if (result.healthy && service.showSuccess) {
+      });
+    } else if (!result.healthy && service.showError) {
       streams.push({
-        name: `✓ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
-        title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is UP`,
+        name: `❌ ${svcName}`,
+        title: `${svcName} is DOWN`,
         url: service.pingUrl
-      })
+      });
     }
   }
-  return { streams }
-})
 
-// Build router the Torrentio way and add /configure
-const addonInterface = builder.getInterface()
-const router = getRouter(addonInterface)
+  return Promise.resolve({ streams });
+});
 
-// Redirect root to /configure
-router.get('/', (req, res) => res.redirect('/configure'))
+// Express to mix routes safely
+const app = express();
 
-// Serve the configuration UI
-router.get('/configure', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=UTF-8')
-  res.send(landingHTML())
-})
+// Serve configuration page (HTML)
+app.get('/configure', (req, res) => {
+  res.sendFile(__dirname + '/landing.html');
+});
 
-// Start HTTP server
-require('http').createServer(router).listen(process.env.PORT || 7000)
+// Serve addon interface (JSON routes)
+const addonInterface = builder.getInterface();
+app.use('/', getRouter(addonInterface));
+
+const port = process.env.PORT || 7000;
+app.listen(port, () => {
+  console.log(`✅ Debrid Health Check Addon running on port ${port}`);
+});
