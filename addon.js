@@ -448,9 +448,9 @@ const server = http.createServer(async (req, res) => {
         const id = m[1];
         const dynamic = JSON.parse(JSON.stringify(baseManifest));
         const saved = cfgStore.get(id);
-        dynamic.behaviorHints = { configurable: true, configurationRequired: true };
+        dynamic.behaviorHints = { configurable: true, configurationRequired: false };
         if (Array.isArray(dynamic.config) && dynamic.config.length) {
-          dynamic.config[0].required = true;
+          dynamic.config[0].required = false;
           if (saved) dynamic.config[0].default = saved;
         }
         sendJSON(res, dynamic);
