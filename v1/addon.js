@@ -49,8 +49,8 @@ builder.defineStreamHandler(async (args) => {
         //return { streams: [] }
         return { 
             streams: [{
-                name: '✅ AllDebrid',
-                title: 'AllDebrid API is UP',
+                name: '📡 HealthCheck',
+                title: '🔴 AllDebrid is DOWN',
                 url: 'https://api.alldebrid.com/v4/ping'
             }]
         }
@@ -61,8 +61,8 @@ builder.defineStreamHandler(async (args) => {
     return { 
         streams: [{
             //name: '✓ AllDebrid',
-            name: '❌ AllDebrid',
-            title: 'AllDebrid API is DOWN',
+            name: '📡 HealthCheck',
+            title: '🟢 AllDebrid is UP',
             url: 'https://api.alldebrid.com/v4/ping'
         }]
     }
