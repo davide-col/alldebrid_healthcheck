@@ -323,7 +323,7 @@ render();
 // ---- HTTP server combining /configure with SDK router ----
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
-
+ 
 const server = http.createServer((req, res) => {
   if (req.url === '/configure') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
