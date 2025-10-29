@@ -1,7 +1,9 @@
 // addon.js
-// Debrid Health Check — Stremio add-on with sleek /configure UI + dynamic manifest cfg
+// Debrid Health Check — Stremio add-on with sleek /configure UI
+// Path-scoped config IDs: /:id/configure and /:id/manifest.json
 
 const http = require('http');
+const { randomUUID } = require('crypto');
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 
 // ---- helpers ----
@@ -15,6 +17,10 @@ async function fetchWithTimeout(url, timeoutSec) {
     clearTimeout(id);
   }
 }
+
+// In-memory config store: { id -> stringified JSON }
+// Note: for multi-instance hosting, back this with a shared store (KV/Redis).
+const cfgStore = new Map();
 
 // ---- manifest (base) ----
 const baseManifest = {
@@ -138,8 +144,9 @@ builder.defineStreamHandler(async (args) => {
   return { streams };
 });
 
-// ---- pretty /configure UI with dynamic install + copy ----
-const CONFIG_HTML = `<!doctype html>
+// ---- pretty /:id/configure UI with path-based install + copy ----
+function htmlFor(id) {
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
@@ -181,6 +188,7 @@ const CONFIG_HTML = `<!doctype html>
     <div class="hero">
       <h1>🔧 Configure Debrid Health Check</h1>
       <p>Add debrid services, customize timeouts, and install directly to Stremio.</p>
+      <p class="hint" style="margin-top:6px">Config ID: <span class="mono">${id}</span></p>
     </div>
 
     <div class="card" style="margin-top:22px">
@@ -188,7 +196,7 @@ const CONFIG_HTML = `<!doctype html>
         <strong>How to use:</strong><br>
         1. Add debrid services to monitor<br>
         2. Configure each service<br>
-        3. Generate install URL<br>
+        3. Save & Install<br>
         4. Use with AIOStreams Groups
       </p>
     </div>
@@ -198,19 +206,19 @@ const CONFIG_HTML = `<!doctype html>
 
     <div class="btns">
       <button id="add" class="btn">+ Add Service</button>
-      <button id="gen" class="btn alt">🔗 Generate Install URL</button>
+      <button id="save" class="btn alt">💾 Save</button>
     </div>
 
     <div class="card footer">
       <div class="hint">Install URL:</div>
-      <input id="installUrl" class="mono" type="text" readonly placeholder="Click Generate to create install URL" style="cursor:text"/>
+      <input id="installUrl" class="mono" type="text" readonly placeholder="Click Save to create install URL" style="cursor:text"/>
       <div class="actions">
         <button id="installBtn" class="btn" style="display:none">📦 Install in Stremio</button>
         <button id="copyUrl" class="btn alt" style="display:none">📋 Copy URL</button>
       </div>
       <div id="copySuccess" class="success">✓ Copied to clipboard!</div>
-      
-      <div class="hint" style="margin-top:16px">Or paste this JSON into the "Services JSON" field:</div>
+
+      <div class="hint" style="margin-top:16px">Current JSON (saved server-side for this ID):</div>
       <textarea id="jsonOut" class="mono" rows="7" readonly placeholder="[]" style="cursor:text"></textarea>
       <button id="copyJson" class="btn alt" style="display:none;margin-top:8px">📋 Copy JSON</button>
       <div id="copyJsonSuccess" class="success">✓ JSON copied!</div>
@@ -218,9 +226,10 @@ const CONFIG_HTML = `<!doctype html>
   </div>
 
 <script>
+const CFG_ID = ${JSON.stringify(id)};
 const servicesEl = document.getElementById('services');
 const addBtn = document.getElementById('add');
-const genBtn = document.getElementById('gen');
+const saveBtn = document.getElementById('save');
 const jsonOut = document.getElementById('jsonOut');
 const installUrl = document.getElementById('installUrl');
 const installBtn = document.getElementById('installBtn');
@@ -239,66 +248,92 @@ const defaults = () => ({
 });
 const state = [];
 
+function mountService(svc, i){
+  const el = document.createElement('div');
+  el.className = 'card svc';
+  el.innerHTML = \`
+    <h3>Service #\${i+1}</h3>
+    <button class="del">✕</button>
+    <div class="row"><label>Service Type</label>
+      <select data-k="type">
+        <option value="alldebrid"\${svc.type==='alldebrid'?' selected':''}>AllDebrid</option>
+        <option value="real-debrid"\${svc.type==='real-debrid'?' selected':''}>Real‑Debrid</option>
+      </select>
+    </div>
+    <div class="row"><label>Ping URL</label>
+      <input data-k="pingUrl" type="text" value="\${svc.pingUrl}">
+    </div>
+    <div class="row"><label>Timeout (s)</label>
+      <input data-k="timeout" type="number" min="1" value="\${svc.timeout}">
+    </div>
+    <div class="row"><label>Enabled</label>
+      <input data-k="enabled" type="checkbox"\${svc.enabled?' checked':''}>
+    </div>
+    <div class="row"><label>Show success</label>
+      <input data-k="showSuccess" type="checkbox"\${svc.showSuccess?' checked':''}>
+    </div>
+    <div class="row"><label>Show error</label>
+      <input data-k="showError" type="checkbox"\${svc.showError?' checked':''}>
+    </div>
+  \`;
+  el.querySelector('.del').onclick = () => { state.splice(i,1); render(); };
+  el.querySelectorAll('[data-k]').forEach(ctrl => {
+    ctrl.oninput = ctrl.onchange = () => {
+      const k = ctrl.getAttribute('data-k');
+      let v = ctrl.type === 'checkbox' ? ctrl.checked : ctrl.value;
+      if (k === 'timeout') v = Math.max(1, parseInt(v || '5', 10));
+      state[i][k] = v;
+    };
+  });
+  return el;
+}
+
 function render() {
   servicesEl.innerHTML = '';
-  state.forEach((svc, i) => {
-    const el = document.createElement('div');
-    el.className = 'card svc';
-    el.innerHTML = \`
-      <h3>Service #\${i+1}</h3>
-      <button class="del">✕</button>
-      <div class="row"><label>Service Type</label>
-        <select data-k="type">
-          <option value="alldebrid"\${svc.type==='alldebrid'?' selected':''}>AllDebrid</option>
-          <option value="real-debrid"\${svc.type==='real-debrid'?' selected':''}>Real‑Debrid</option>
-        </select>
-      </div>
-      <div class="row"><label>Ping URL</label>
-        <input data-k="pingUrl" type="text" value="\${svc.pingUrl}">
-      </div>
-      <div class="row"><label>Timeout (s)</label>
-        <input data-k="timeout" type="number" min="1" value="\${svc.timeout}">
-      </div>
-      <div class="row"><label>Enabled</label>
-        <input data-k="enabled" type="checkbox"\${svc.enabled?' checked':''}>
-      </div>
-      <div class="row"><label>Show success</label>
-        <input data-k="showSuccess" type="checkbox"\${svc.showSuccess?' checked':''}>
-      </div>
-      <div class="row"><label>Show error</label>
-        <input data-k="showError" type="checkbox"\${svc.showError?' checked':''}>
-      </div>
-    \`;
-    el.querySelector('.del').onclick = () => { state.splice(i,1); render(); };
-    el.querySelectorAll('[data-k]').forEach(ctrl => {
-      ctrl.oninput = ctrl.onchange = () => {
-        const k = ctrl.getAttribute('data-k');
-        const input = el.querySelector('[data-k="'+k+'"]');
-        let v = input.type === 'checkbox' ? input.checked : input.value;
-        if (k === 'timeout') v = Math.max(1, parseInt(v || '5', 10));
-        state[i][k] = v;
-      };
-    });
-    servicesEl.appendChild(el);
-  });
+  state.forEach((svc, i) => servicesEl.appendChild(mountService(svc, i)));
   if (!state.length) { state.push(defaults()); render(); }
 }
 
+// Load saved config for this ID
+async function loadSaved(){
+  try{
+    const r = await fetch('/cfg/' + encodeURIComponent(CFG_ID));
+    if (r.ok) {
+      const txt = await r.text();
+      const arr = JSON.parse(txt || '[]');
+      if (Array.isArray(arr) && arr.length) {
+        state.splice(0, state.length, ...arr);
+      }
+      jsonOut.value = JSON.stringify(state, null, 2);
+    }
+  } catch {}
+  render();
+}
+loadSaved();
+
 addBtn.onclick = () => { state.push(defaults()); render(); };
 
-// Generate install URL that carries cfg in base64
-genBtn.onclick = () => {
+// Save server-side and generate path-based install URL
+saveBtn.onclick = async () => {
   const json = JSON.stringify(state, null, 2);
-  jsonOut.value = json;
-  const b64 = btoa(unescape(encodeURIComponent(json)));
-  const manifestUrl = location.origin + '/manifest.json?cfg=' + encodeURIComponent(b64);
-  installUrl.value = manifestUrl;
-  installBtn.style.display = 'inline-block';
-  copyUrlBtn.style.display = 'inline-block';
-  copyJsonBtn.style.display = 'inline-block';
+  try {
+    await fetch('/cfg/' + encodeURIComponent(CFG_ID), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: json
+    });
+    jsonOut.value = json;
+    const manifestUrl = location.origin + '/' + CFG_ID + '/manifest.json';
+    installUrl.value = manifestUrl;
+    installBtn.style.display = 'inline-block';
+    copyUrlBtn.style.display = 'inline-block';
+    copyJsonBtn.style.display = 'inline-block';
+  } catch(e) {
+    alert('Failed to save configuration.');
+  }
 };
 
-// Launch Stremio install (strip protocol for stremio://)
+// Install via stremio://<host>/<id>/manifest.json
 installBtn.onclick = () => {
   const url = (installUrl.value || '').trim();
   if (!url) return;
@@ -327,47 +362,109 @@ copyJsonBtn.onclick = async () => {
     document.execCommand('copy');
   }
 };
-
-render();
 </script>
 </body></html>`;
+}
 
-// ---- HTTP server: dynamic manifest + /configure + SDK router ----
+// ---- HTTP server: path-based configure + manifest + SDK router ----
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
-const server = http.createServer((req, res) => {
-  if (req.url.startsWith('/manifest.json')) {
-    try {
-      const u = new URL(req.url, 'http://localhost');
-      const cfg = u.searchParams.get('cfg');
-      // Deep copy base manifest to avoid mutating
-      const dynamic = JSON.parse(JSON.stringify(baseManifest));
-      if (cfg) {
-        const decoded = Buffer.from(decodeURIComponent(cfg), 'base64').toString('utf8');
-        // Validate JSON so we don't break the manifest
-        JSON.parse(decoded);
-        if (Array.isArray(dynamic.config) && dynamic.config.length) {
-          dynamic.config[0].default = decoded;
-        }
-      }
-      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify(dynamic));
-      return;
-    } catch {
-      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify(baseManifest));
+function sendJSON(res, obj) {
+  res.writeHead(200, {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'access-control-allow-headers': '*'
+  });
+  res.end(JSON.stringify(obj));
+}
+
+const server = http.createServer(async (req, res) => {
+  try {
+    // Redirect /configure -> /:id/configure to create a new config namespace
+    if (req.url === '/configure') {
+      const id = randomUUID();
+      res.writeHead(302, { location: `/${id}/configure` });
+      res.end();
       return;
     }
-  }
 
-  if (req.url === '/configure') {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(CONFIG_HTML);
-    return;
-  }
+    // GET /:id/configure -> HTML page bound to that id
+    {
+      const m = req.url.match(/^\/([^/]+)\/configure\/?$/);
+      if (m) {
+        const id = m[1];
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(htmlFor(id));
+        return;
+      }
+    }
 
-  router(req, res, () => { res.statusCode = 404; res.end(); });
+    // PUT /cfg/:id -> save JSON
+    {
+      const m = req.url.match(/^\/cfg\/([^/]+)\/?$/);
+      if (m && req.method === 'PUT') {
+        const id = m[1];
+        let body = '';
+        req.on('data', (c) => (body += c));
+        req.on('end', () => {
+          try {
+            // Validate JSON
+            JSON.parse(body || '[]');
+            cfgStore.set(id, body || '[]');
+            res.writeHead(204, { 'access-control-allow-origin': '*' });
+            res.end();
+          } catch {
+            res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+            res.end('invalid json');
+          }
+        });
+        return;
+      }
+    }
+
+    // GET /cfg/:id -> return saved JSON (raw)
+    {
+      const m = req.url.match(/^\/cfg\/([^/]+)\/?$/);
+      if (m && req.method === 'GET') {
+        const id = m[1];
+        const v = cfgStore.get(id) || '[]';
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(v);
+        return;
+      }
+    }
+
+    // GET /:id/manifest.json -> dynamic manifest with default prefilled from store
+    {
+      const m = req.url.match(/^\/([^/]+)\/manifest\.json(?:\?.*)?$/);
+      if (m) {
+        const id = m[1];
+        const dynamic = JSON.parse(JSON.stringify(baseManifest));
+        const saved = cfgStore.get(id);
+        if (saved && Array.isArray(dynamic.config) && dynamic.config.length) {
+          dynamic.config[0].default = saved;
+        }
+        sendJSON(res, dynamic);
+        return;
+      }
+    }
+
+    // Legacy: /manifest.json (no id) still serves base manifest
+    if (req.url.startsWith('/manifest.json')) {
+      sendJSON(res, baseManifest);
+      return;
+    }
+
+    // Delegate SDK routes
+    router(req, res, () => {
+      res.statusCode = 404;
+      res.end();
+    });
+  } catch (e) {
+    res.statusCode = 500;
+    res.end('internal error');
+  }
 });
 
 const PORT = process.env.PORT || 7000;
