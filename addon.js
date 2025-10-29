@@ -58,14 +58,15 @@ builder.defineStreamHandler(async (args) => {
     
     console.log('[Response] AllDebrid UP - allowing addons to proceed')
     // Return a dummy stream that AIOStreams can detect
-    return { 
-        streams: [{
-            //name: '✓ AllDebrid',
-            name: '📡 HealthCheck',
-            title: '🟢 AllDebrid is UP',
-            url: 'https://api.alldebrid.com/v4/ping'
-        }]
-    }
+    return { streams: [] }
+    // return { 
+    //     streams: [{
+    //         //name: '✓ AllDebrid',
+    //         name: '📡 HealthCheck',
+    //         title: '🟢 AllDebrid is UP',
+    //         url: 'https://api.alldebrid.com/v4/ping'
+    //     }]
+    // }
 })
 
 const port = process.env.PORT || 7000
