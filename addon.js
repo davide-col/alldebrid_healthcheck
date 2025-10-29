@@ -120,16 +120,16 @@ builder.defineStreamHandler(async (args) => {
 
     if (ok && showSuccess) {
       streams.push({
-        title: `✅ ${display} • ${ms}ms`,
-        description: `API up • ${statusText}`,
+        title: `✅ Up • ${serviceLabel} • ${ms}ms`,
+        description: `API ${statusText} • ${host}`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/ok`
-      });
+    });
     } else if (!ok && showError) {
       streams.push({
-        title: `❌ ${display} • ${ms}ms`,
-        description: `API down • ${statusText}`,
+        title: `❌ Down • ${serviceLabel} • ${ms}ms`,
+        description: `API ${statusText} • ${host}`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/down`
-      });
+    });
     }
   }
 
