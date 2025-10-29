@@ -1,40 +1,76 @@
 const { addonBuilder, serveHTTP } = require('stremio-addon-sdk')
 const https = require('https')
+const http = require('http')
+
+const DEFAULT_SERVICES = {
+    alldebrid: {
+        name: 'AllDebrid',
+        pingUrl: 'https://api.alldebrid.com/v4/ping',
+        timeout: 5000
+    },
+    realdebrid: {
+        name: 'Real-Debrid',
+        pingUrl: 'https://api.real-debrid.com/rest/1.0/time',
+        timeout: 5000
+    }
+}
 
 const manifest = {
-    id: 'com.alldebrid.healthcheck',
-    version: '1.0.0',
-    name: 'AllDebrid Health Check',
-    description: 'Returns a dummy stream when AllDebrid API is UP, empty when DOWN',
+    id: 'com.debrid.healthcheck',
+    version: '2.0.0',
+    name: 'Debrid Health Check',
+    description: 'Check multiple debrid services - configurable',
     resources: ['stream'],
     types: ['movie', 'series'],
     idPrefixes: ['tt'],
-    catalogs: []
+    catalogs: [],
+    behaviorHints: {
+        configurable: true,
+        configurationRequired: false
+    }
 }
 
 const builder = new addonBuilder(manifest)
 
-async function checkAllDebridHealth() {
+function parseConfig(args) {
+    const config = args.config || {}
+    
+    return {
+        services: config.services ? JSON.parse(config.services) : [{
+            id: 'alldebrid',
+            enabled: true,
+            pingUrl: DEFAULT_SERVICES.alldebrid.pingUrl,
+            showSuccess: true,
+            showError: true,
+            timeout: 5000
+        }]
+    }
+}
+
+async function checkServiceHealth(service) {
     return new Promise((resolve) => {
-        const req = https.get('https://api.alldebrid.com/v4/ping', (res) => {
+        const url = new URL(service.pingUrl)
+        const client = url.protocol === 'https:' ? https : http
+        
+        const req = client.get(service.pingUrl, (res) => {
             if (res.statusCode === 200) {
-                console.log('[Health Check] AllDebrid API is UP')
-                resolve(true)
+                console.log(`[${service.id}] UP (${res.statusCode})`)
+                resolve({ healthy: true, status: res.statusCode })
             } else {
-                console.log(`[Health Check] AllDebrid returned ${res.statusCode}`)
-                resolve(false)
+                console.log(`[${service.id}] ${res.statusCode}`)
+                resolve({ healthy: false, status: res.statusCode })
             }
         })
         
         req.on('error', (error) => {
-            console.error('[Health Check] AllDebrid is DOWN:', error.message)
-            resolve(false)
+            console.error(`[${service.id}] DOWN:`, error.message)
+            resolve({ healthy: false, error: error.message })
         })
         
-        req.setTimeout(5000, () => {
+        req.setTimeout(service.timeout || 5000, () => {
             req.destroy()
-            console.error('[Health Check] AllDebrid timeout')
-            resolve(false)
+            console.error(`[${service.id}] timeout`)
+            resolve({ healthy: false, error: 'timeout' })
         })
     })
 }
@@ -42,24 +78,37 @@ async function checkAllDebridHealth() {
 builder.defineStreamHandler(async (args) => {
     console.log(`[Request] ${args.type} ${args.id}`)
     
-    const isHealthy = await checkAllDebridHealth()
+    const config = parseConfig(args)
+    const streams = []
     
-    if (!isHealthy) {
-        console.log('[Response] AllDebrid DOWN - blocking all addons')
-        return { streams: [] }
+    for (const service of config.services) {
+        if (!service.enabled) continue
+        
+        const result = await checkServiceHealth(service)
+        
+        if (!result.healthy) {
+            if (service.showError) {
+                streams.push({
+                    name: `⚠️ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
+                    title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is DOWN`,
+                    url: service.pingUrl
+                })
+            }
+        } else {
+            if (service.showSuccess) {
+                streams.push({
+                    name: `✓ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
+                    title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is UP`,
+                    url: service.pingUrl
+                })
+            }
+        }
     }
     
-    console.log('[Response] AllDebrid UP - allowing addons to proceed')
-    // Return a dummy stream that AIOStreams can detect
-    return { 
-        streams: [{
-            name: '✓ AllDebrid',
-            title: 'AllDebrid API is UP',
-            url: 'https://api.alldebrid.com/v4/ping'
-        }]
-    }
+    return { streams }
 })
 
 const port = process.env.PORT || 7000
 serveHTTP(builder.getInterface(), { port })
-console.log(`Addon running on http://127.0.0.1:${port}`)
+console.log(`Running on http://127.0.0.1:${port}`)
+console.log(`Configure: http://127.0.0.1:${port}/configure`)
