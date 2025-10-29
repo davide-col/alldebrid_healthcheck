@@ -1,6 +1,5 @@
 // addon.js
-// Debrid Health Check — Stremio add-on with sleek /configure UI
-// Path-scoped config IDs: /:id/configure and /:id/manifest.json
+// Debrid Health Check — Stremio add-on with sleek /:id/configure and dynamic /:id/manifest.json
 
 const http = require('http');
 const { randomUUID } = require('crypto');
@@ -19,10 +18,9 @@ async function fetchWithTimeout(url, timeoutSec) {
 }
 
 // In-memory config store: { id -> stringified JSON }
-// Note: for multi-instance hosting, back this with a shared store (KV/Redis).
 const cfgStore = new Map();
 
-// ---- manifest (base) ----
+// ---- base manifest ----
 const baseManifest = {
   id: 'com.example.debrid-health',
   version: '1.0.0',
@@ -144,7 +142,7 @@ builder.defineStreamHandler(async (args) => {
   return { streams };
 });
 
-// ---- pretty /:id/configure UI with path-based install + copy ----
+// ---- pretty /:id/configure UI (path-scoped) ----
 function htmlFor(id) {
   return `<!doctype html>
 <html lang="en">
@@ -196,7 +194,7 @@ function htmlFor(id) {
         <strong>How to use:</strong><br>
         1. Add debrid services to monitor<br>
         2. Configure each service<br>
-        3. Save & Install<br>
+        3. Save & Install (a dialog will appear in Stremio)<br>
         4. Use with AIOStreams Groups
       </p>
     </div>
@@ -313,7 +311,7 @@ loadSaved();
 
 addBtn.onclick = () => { state.push(defaults()); render(); };
 
-// Save server-side and generate path-based install URL
+// Save server-side and generate install URL
 saveBtn.onclick = async () => {
   const json = JSON.stringify(state, null, 2);
   try {
@@ -362,17 +360,20 @@ copyJsonBtn.onclick = async () => {
     document.execCommand('copy');
   }
 };
+
+render();
 </script>
 </body></html>`;
 }
 
-// ---- HTTP server: path-based configure + manifest + SDK router ----
+// ---- HTTP server: dynamic path manifest forcing config dialog ----
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
 function sendJSON(res, obj) {
   res.writeHead(200, {
     'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store, max-age=0',
     'access-control-allow-origin': '*',
     'access-control-allow-headers': '*'
   });
@@ -381,7 +382,7 @@ function sendJSON(res, obj) {
 
 const server = http.createServer(async (req, res) => {
   try {
-    // Redirect /configure -> /:id/configure to create a new config namespace
+    // Create a new config namespace
     if (req.url === '/configure') {
       const id = randomUUID();
       res.writeHead(302, { location: `/${id}/configure` });
@@ -389,7 +390,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // GET /:id/configure -> HTML page bound to that id
+    // Serve HTML configurator
     {
       const m = req.url.match(/^\/([^/]+)\/configure\/?$/);
       if (m) {
@@ -400,7 +401,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // PUT /cfg/:id -> save JSON
+    // Save JSON
     {
       const m = req.url.match(/^\/cfg\/([^/]+)\/?$/);
       if (m && req.method === 'PUT') {
@@ -409,10 +410,12 @@ const server = http.createServer(async (req, res) => {
         req.on('data', (c) => (body += c));
         req.on('end', () => {
           try {
-            // Validate JSON
-            JSON.parse(body || '[]');
+            JSON.parse(body || '[]'); // validate
             cfgStore.set(id, body || '[]');
-            res.writeHead(204, { 'access-control-allow-origin': '*' });
+            res.writeHead(204, {
+              'access-control-allow-origin': '*',
+              'cache-control': 'no-store'
+            });
             res.end();
           } catch {
             res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
@@ -423,34 +426,39 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // GET /cfg/:id -> return saved JSON (raw)
+    // Read JSON
     {
       const m = req.url.match(/^\/cfg\/([^/]+)\/?$/);
       if (m && req.method === 'GET') {
         const id = m[1];
         const v = cfgStore.get(id) || '[]';
-        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store'
+        });
         res.end(v);
         return;
       }
     }
 
-    // GET /:id/manifest.json -> dynamic manifest with default prefilled from store
+    // Dynamic manifest bound to :id, forcing config dialog
     {
       const m = req.url.match(/^\/([^/]+)\/manifest\.json(?:\?.*)?$/);
       if (m) {
         const id = m[1];
         const dynamic = JSON.parse(JSON.stringify(baseManifest));
         const saved = cfgStore.get(id);
-        if (saved && Array.isArray(dynamic.config) && dynamic.config.length) {
-          dynamic.config[0].default = saved;
+        dynamic.behaviorHints = { configurable: true, configurationRequired: true };
+        if (Array.isArray(dynamic.config) && dynamic.config.length) {
+          dynamic.config[0].required = true;
+          if (saved) dynamic.config[0].default = saved;
         }
         sendJSON(res, dynamic);
         return;
       }
     }
 
-    // Legacy: /manifest.json (no id) still serves base manifest
+    // Legacy base manifest (no id)
     if (req.url.startsWith('/manifest.json')) {
       sendJSON(res, baseManifest);
       return;
