@@ -101,6 +101,17 @@ builder.defineStreamHandler(async (args) => {
 // Create Express app
 const app = express()
 
+// CORS middleware - CRITICAL for Stremio
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*')
+    res.header('Access-Control-Allow-Headers', '*')
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200)
+    }
+    next()
+})
+
 // Landing page at root
 app.get('/', (req, res) => {
     res.send(`
