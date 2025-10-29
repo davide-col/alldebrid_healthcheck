@@ -1,10 +1,10 @@
 // addon.js
-// Debrid Health Check — Stremio add-on with a sleek /configure UI
+// Debrid Health Check — Stremio add-on with sleek /configure UI
 
 const http = require('http');
-const { addonBuilder } = require('stremio-addon-sdk'); // SDK entrypoint as per README [attached_file:1]
+const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 
-/* ========= Helpers ========= */
+// ---- helpers ----
 async function fetchWithTimeout(url, timeoutSec) {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), Math.max(1, timeoutSec) * 1000);
@@ -16,7 +16,7 @@ async function fetchWithTimeout(url, timeoutSec) {
   }
 }
 
-/* ========= Manifest ========= */
+// ---- manifest ----
 const manifest = {
   id: 'com.example.debrid-health',
   version: '1.0.0',
@@ -27,7 +27,6 @@ const manifest = {
   catalogs: [],
   idPrefixes: ['tt'],
   behaviorHints: { configurable: true, configurationRequired: false },
-  // Keep built-in config minimal; the pretty UI generates JSON for this field
   config: [
     {
       key: 'services',
@@ -54,14 +53,13 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-/* ========= Stream handler ========= */
+// ---- stream handler ----
 builder.defineStreamHandler(async (args) => {
-  // Parse Services JSON from built-in settings
   let services = [];
   try {
     const raw = (args.config && args.config.services) || '';
     services = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
-  } catch (_) {
+  } catch {
     services = [];
   }
   if (!services.length) {
@@ -77,7 +75,7 @@ builder.defineStreamHandler(async (args) => {
     ];
   }
 
-  const out = [];
+  const streams = [];
   for (const svc of services) {
     const {
       type = 'alldebrid',
@@ -93,14 +91,13 @@ builder.defineStreamHandler(async (args) => {
     if (!enabled || !pingUrl) continue;
 
     let ok = false;
-    let note = '';
+    let statusText = '';
     let ms = 0;
     const t0 = Date.now();
     try {
       const res = await fetchWithTimeout(pingUrl, timeout);
       ms = Date.now() - t0;
       ok = res.ok;
-      // Try to detect AllDebrid success JSON
       try {
         const ct = res.headers.get('content-type') || '';
         if (ct.includes('application/json')) {
@@ -108,32 +105,32 @@ builder.defineStreamHandler(async (args) => {
           if (j && (j.status === 'success' || j.data?.ping === 'pong')) ok = true;
         }
       } catch {}
-      note = `${res.status} ${res.statusText || ''}`.trim();
+      statusText = `${res.status} ${res.statusText || ''}`.trim();
     } catch (e) {
-      note = e && e.name === 'AbortError' ? 'timeout' : 'network error';
+      statusText = e && e.name === 'AbortError' ? 'timeout' : 'network error';
       ok = false;
       ms = Date.now() - t0;
     }
 
     if (ok && showSuccess) {
-      out.push({
+      streams.push({
         title: `OK • ${type} • ${ms}ms`,
-        description: `Healthy (${note})`,
+        description: `Healthy (${statusText})`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/ok`
       });
     } else if (!ok && showError) {
-      out.push({
+      streams.push({
         title: `DOWN • ${type} • ${ms}ms`,
-        description: `Unreachable (${note})`,
+        description: `Unreachable (${statusText})`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/down`
       });
     }
   }
 
-  return { streams: out };
+  return { streams };
 });
 
-/* ========= Pretty /configure UI ========= */
+// ---- pretty /configure UI ----
 const CONFIG_HTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -142,7 +139,6 @@ const CONFIG_HTML = `<!doctype html>
 <title>Configure Debrid Health Check</title>
 <style>
   :root{ color-scheme:dark; --bg:#0e1117; --panel:#151a28; --muted:#9aa4af; --accent:#8b5cf6; --line:#24304a; }
-  html,body{height:100%}
   body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto;background:
     radial-gradient(1000px 600px at 80% -10%, #2a2350 0%, transparent 60%), var(--bg); color:#e7ebf0}
   .wrap{max-width:980px;margin:40px auto;padding:0 16px}
@@ -173,20 +169,18 @@ const CONFIG_HTML = `<!doctype html>
   <div class="wrap">
     <div class="hero">
       <h1>Configure Debrid Health Check</h1>
-      <p>Add debrid services, tweak timeouts, and generate an install URL or JSON.</p>
+      <p>Add debrid services, tweak timeouts, and generate JSON for Stremio settings.</p>
     </div>
 
     <div id="services" class="grid"></div>
 
     <div class="btns">
       <button id="add" class="btn">+ Add Service</button>
-      <button id="gen" class="btn alt">Generate Install URL + JSON</button>
+      <button id="gen" class="btn alt">Generate JSON</button>
     </div>
 
     <div class="card footer">
-      <div class="hint">Paste this URL in Stremio Add‑ons → “Add via URL”.</div>
-      <input id="installUrl" class="mono" type="text" placeholder="Install URL will appear here"/>
-      <div class="hint">Or paste the JSON below into the built‑in “Services JSON” field.</div>
+      <div class="hint">Paste this JSON into the add-on’s “Services JSON” field in Stremio.</div>
       <textarea id="jsonOut" class="mono" rows="7" placeholder="[]"></textarea>
     </div>
   </div>
@@ -196,7 +190,6 @@ const servicesEl = document.getElementById('services');
 const addBtn = document.getElementById('add');
 const genBtn = document.getElementById('gen');
 const jsonOut = document.getElementById('jsonOut');
-const installUrl = document.getElementById('installUrl');
 
 const defaults = () => ({
   type: 'alldebrid',
@@ -253,22 +246,14 @@ function render() {
 }
 
 addBtn.onclick = () => { state.push(defaults()); render(); };
-
-function b64url(s) {
-  return btoa(unescape(encodeURIComponent(s))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
-}
-genBtn.onclick = () => {
-  const json = JSON.stringify(state, null, 2);
-  jsonOut.value = json;
-  // Provide an install URL with a fragment users can keep (SDK ignores it, but it’s convenient to share)
-  installUrl.value = location.origin + '/manifest.json#cfg=' + b64url(json);
-};
+genBtn.onclick = () => { jsonOut.value = JSON.stringify(state, null, 2); };
 render();
 </script>
 </body></html>`;
 
-/* ========= HTTP server: serve /configure + addon interface ========= */
-const addonInterface = builder.getInterface(); // standard SDK interface [attached_file:1]
+// ---- HTTP server combining /configure with SDK router ----
+const addonInterface = builder.getInterface();
+const router = getRouter(addonInterface);
 
 const server = http.createServer((req, res) => {
   if (req.url === '/configure') {
@@ -276,8 +261,10 @@ const server = http.createServer((req, res) => {
     res.end(CONFIG_HTML);
     return;
   }
-  // Delegate /manifest.json and /resource routes to the SDK
-  addonInterface(req, res);
+  router(req, res, () => {
+    res.statusCode = 404;
+    res.end();
+  });
 });
 
 const PORT = process.env.PORT || 7000;
