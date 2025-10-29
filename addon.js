@@ -127,13 +127,13 @@ builder.defineStreamHandler(async (args) => {
     if (ok && showSuccess) {
       streams.push({
         title: `✅ Up • ${display} • ${ms}ms`,
-        description: `API ${statusText} • ${host}`,
+        description: `✅ ${display} API is UP!\n${statusText}\n${host}`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/ok`
       });
     } else if (!ok && showError) {
       streams.push({
         title: `❌ Down • ${display} • ${ms}ms`,
-        description: `API ${statusText} • ${host}`,
+        description: `❌ ${display} API is DOWN!\n${statusText}\n${host}`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/down`
       });
     }
