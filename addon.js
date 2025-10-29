@@ -1,4 +1,4 @@
-const { addonBuilder } = require('stremio-addon-sdk')
+const { addonBuilder, serveHTTP } = require('stremio-addon-sdk')
 const express = require('express')
 const https = require('https')
 const http = require('http')
@@ -100,17 +100,6 @@ builder.defineStreamHandler(async (args) => {
 
 // Create Express app
 const app = express()
-
-// CORS middleware - CRITICAL for Stremio
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*')
-    res.header('Access-Control-Allow-Headers', '*')
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200)
-    }
-    next()
-})
 
 // Landing page at root
 app.get('/', (req, res) => {
@@ -470,29 +459,14 @@ app.get('/configure', (req, res) => {
     `)
 })
 
-// Mount Stremio addon routes
+// Mount Stremio addon using serveHTTP
 const addonInterface = builder.getInterface()
-
-app.get('/manifest.json', (req, res) => {
-    addonInterface(req, res)
+serveHTTP(addonInterface, {
+    port: process.env.PORT || 7000,
+    server: app
 })
 
-app.get('/:config/manifest.json', (req, res) => {
-    addonInterface(req, res)
-})
-
-app.get('/stream/:type/:id.json', (req, res) => {
-    addonInterface(req, res)
-})
-
-app.get('/:config/stream/:type/:id.json', (req, res) => {
-    addonInterface(req, res)
-})
-
-const port = process.env.PORT || 7000
-app.listen(port, () => {
-    console.log(`✅ Debrid Health Check addon is running!`)
-    console.log(`🏠 Home: http://127.0.0.1:${port}`)
-    console.log(`⚙️  Configure: http://127.0.0.1:${port}/configure`)
-    console.log(`📦 Install: http://127.0.0.1:${port}/manifest.json`)
-})
+console.log(`✅ Debrid Health Check addon is running!`)
+console.log(`🏠 Home: http://127.0.0.1:${process.env.PORT || 7000}`)
+console.log(`⚙️  Configure: http://127.0.0.1:${process.env.PORT || 7000}/configure`)
+console.log(`📦 Install: http://127.0.0.1:${process.env.PORT || 7000}/manifest.json`)
