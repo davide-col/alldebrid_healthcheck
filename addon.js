@@ -288,8 +288,10 @@ genBtn.onclick = () => {
 };
 
 installBtn.onclick = () => {
-  const url = installUrl.value;
-  if (url) window.location.href = 'stremio://' + url;
+  const url = (installUrl.value || '').trim();
+  if (!url) return;
+  const noProto = url.replace(/^https?:\/\//i, ''); // -> alldebrid-healthcheck.onrender.com/manifest.json
+  window.location.href = 'stremio://' + noProto;
 };
 
 copyUrlBtn.onclick = async () => {
