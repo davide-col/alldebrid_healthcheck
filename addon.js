@@ -130,7 +130,7 @@ builder.defineStreamHandler(async (args) => {
   return { streams };
 });
 
-// ---- pretty /configure UI ----
+// ---- pretty /configure UI with Install + Copy buttons ----
 const CONFIG_HTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -158,30 +158,54 @@ const CONFIG_HTML = `<!doctype html>
   .del{position:absolute;top:10px;right:10px;background:#10182a;border:1px solid var(--line);color:#d1d5db;padding:6px 9px;border-radius:8px;cursor:pointer}
   .del:hover{background:#1b2440}
   .btns{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px}
-  .btn{background:var(--accent);color:#fff;border:none;padding:11px 16px;border-radius:10px;cursor:pointer}
+  .btn{background:var(--accent);color:#fff;border:none;padding:11px 16px;border-radius:10px;cursor:pointer;font-size:14px}
   .btn.alt{background:#25324a}
-  .hint{color:var(--muted);font-size:13px}
+  .btn:hover{opacity:0.9}
+  .hint{color:var(--muted);font-size:13px;margin-bottom:6px}
   .footer{margin-top:18px;display:grid;gap:10px}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .actions{display:flex;gap:8px;margin-top:8px}
+  .success{color:#22c55e;font-size:13px;display:none}
 </style>
 </head>
 <body>
   <div class="wrap">
     <div class="hero">
-      <h1>Configure Debrid Health Check</h1>
-      <p>Add debrid services, tweak timeouts, and generate JSON for Stremio settings.</p>
+      <h1>🔧 Configure Debrid Health Check</h1>
+      <p>Add debrid services, customize timeouts, and install directly to Stremio.</p>
     </div>
 
+    <div class="card" style="margin-top:22px">
+      <p style="color:var(--muted);font-size:14px;margin:0 0 12px">
+        <strong>How to use:</strong><br>
+        1. Add debrid services to monitor<br>
+        2. Configure each service<br>
+        3. Generate install URL<br>
+        4. Use with AIOStreams Groups
+      </p>
+    </div>
+
+    <h2 style="margin:22px 0 12px;font-size:20px">Services</h2>
     <div id="services" class="grid"></div>
 
     <div class="btns">
       <button id="add" class="btn">+ Add Service</button>
-      <button id="gen" class="btn alt">Generate JSON</button>
+      <button id="gen" class="btn alt">🔗 Generate Install URL</button>
     </div>
 
     <div class="card footer">
-      <div class="hint">Paste this JSON into the add-on’s “Services JSON” field in Stremio.</div>
-      <textarea id="jsonOut" class="mono" rows="7" placeholder="[]"></textarea>
+      <div class="hint">Install URL:</div>
+      <input id="installUrl" class="mono" type="text" readonly placeholder="Click Generate to create install URL" style="cursor:text"/>
+      <div class="actions">
+        <button id="installBtn" class="btn" style="display:none">📦 Install in Stremio</button>
+        <button id="copyUrl" class="btn alt" style="display:none">📋 Copy URL</button>
+      </div>
+      <div id="copySuccess" class="success">✓ Copied to clipboard!</div>
+      
+      <div class="hint" style="margin-top:16px">Or paste this JSON into the "Services JSON" field:</div>
+      <textarea id="jsonOut" class="mono" rows="7" readonly placeholder="[]" style="cursor:text"></textarea>
+      <button id="copyJson" class="btn alt" style="display:none;margin-top:8px">📋 Copy JSON</button>
+      <div id="copyJsonSuccess" class="success">✓ JSON copied!</div>
     </div>
   </div>
 
@@ -190,6 +214,12 @@ const servicesEl = document.getElementById('services');
 const addBtn = document.getElementById('add');
 const genBtn = document.getElementById('gen');
 const jsonOut = document.getElementById('jsonOut');
+const installUrl = document.getElementById('installUrl');
+const installBtn = document.getElementById('installBtn');
+const copyUrlBtn = document.getElementById('copyUrl');
+const copyJsonBtn = document.getElementById('copyJson');
+const copySuccess = document.getElementById('copySuccess');
+const copyJsonSuccess = document.getElementById('copyJsonSuccess');
 
 const defaults = () => ({
   type: 'alldebrid',
@@ -246,7 +276,44 @@ function render() {
 }
 
 addBtn.onclick = () => { state.push(defaults()); render(); };
-genBtn.onclick = () => { jsonOut.value = JSON.stringify(state, null, 2); };
+
+genBtn.onclick = () => {
+  const json = JSON.stringify(state, null, 2);
+  jsonOut.value = json;
+  const manifestUrl = location.origin + '/manifest.json';
+  installUrl.value = manifestUrl;
+  installBtn.style.display = 'inline-block';
+  copyUrlBtn.style.display = 'inline-block';
+  copyJsonBtn.style.display = 'inline-block';
+};
+
+installBtn.onclick = () => {
+  const url = installUrl.value;
+  if (url) window.location.href = 'stremio://' + url;
+};
+
+copyUrlBtn.onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(installUrl.value);
+    copySuccess.style.display = 'block';
+    setTimeout(() => copySuccess.style.display = 'none', 2000);
+  } catch (e) {
+    installUrl.select();
+    document.execCommand('copy');
+  }
+};
+
+copyJsonBtn.onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(jsonOut.value);
+    copyJsonSuccess.style.display = 'block';
+    setTimeout(() => copyJsonSuccess.style.display = 'none', 2000);
+  } catch (e) {
+    jsonOut.select();
+    document.execCommand('copy');
+  }
+};
+
 render();
 </script>
 </body></html>`;
