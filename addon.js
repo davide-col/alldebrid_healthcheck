@@ -1,4 +1,4 @@
-const { addonBuilder, serveHTTP } = require('stremio-addon-sdk')
+const { addonBuilder } = require('stremio-addon-sdk')
 const express = require('express')
 const https = require('https')
 const http = require('http')
@@ -24,11 +24,7 @@ const manifest = {
     resources: ['stream'],
     types: ['movie', 'series'],
     idPrefixes: ['tt'],
-    catalogs: [],
-    behaviorHints: {
-        configurable: true,
-        configurationRequired: false
-    }
+    catalogs: []
 }
 
 const builder = new addonBuilder(manifest)
@@ -98,10 +94,21 @@ builder.defineStreamHandler(async (args) => {
     return { streams }
 })
 
-// Create Express app
 const app = express()
 
-// Configuration page - MUST come before serveHTTP
+// CORS
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*')
+    res.header('Access-Control-Allow-Headers', '*')
+    next()
+})
+
+// Root redirects to configure (like Torrentio)
+app.get('/', (req, res) => {
+    res.redirect('/configure')
+})
+
+// Configuration page
 app.get('/configure', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -127,10 +134,7 @@ app.get('/configure', (req, res) => {
             margin-bottom: 30px;
             text-align: center;
         }
-        h1 { 
-            color: #fff; 
-            margin: 0;
-        }
+        h1 { color: #fff; margin: 0; }
         .info {
             background: #2a2d3a;
             padding: 15px;
@@ -198,10 +202,10 @@ app.get('/configure', (req, res) => {
     <div class="info">
         <strong>How to use:</strong>
         <ol>
-            <li>Add debrid services to monitor (AllDebrid, Real-Debrid, or custom)</li>
-            <li>Configure each service (URL, timeout, display options)</li>
-            <li>Generate install URL and add to Stremio</li>
-            <li>Use with AIOStreams Groups to block streams when down</li>
+            <li>Add debrid services to monitor</li>
+            <li>Configure each service</li>
+            <li>Generate install URL</li>
+            <li>Use with AIOStreams Groups</li>
         </ol>
     </div>
 
@@ -241,10 +245,10 @@ app.get('/configure', (req, res) => {
                 '<div class="helper-text">API endpoint to check</div>' +
                 '<label>Timeout (seconds):</label>' +
                 '<input type="number" id="timeout-' + id + '" value="5" min="1" max="30" step="1" />' +
-                '<div class="helper-text">How long to wait for response (5 seconds recommended)</div>' +
+                '<div class="helper-text">5 seconds recommended</div>' +
                 '<label><input type="checkbox" id="enabled-' + id + '" checked /> Enabled</label>' +
-                '<label><input type="checkbox" id="success-' + id + '" checked /> Show success message (dummy stream when UP)</label>' +
-                '<label><input type="checkbox" id="error-' + id + '" checked /> Show error message (dummy stream when DOWN)</label>';
+                '<label><input type="checkbox" id="success-' + id + '" checked /> Show success message</label>' +
+                '<label><input type="checkbox" id="error-' + id + '" checked /> Show error message</label>';
             document.getElementById('services').appendChild(div);
         }
 
@@ -284,10 +288,7 @@ app.get('/configure', (req, res) => {
                 return;
             }
             
-            const configObj = {
-                services: JSON.stringify(services)
-            };
-            
+            const configObj = { services: JSON.stringify(services) };
             const configJson = JSON.stringify(configObj);
             const configBase64 = btoa(unescape(encodeURIComponent(configJson)));
             const baseUrl = window.location.origin;
@@ -298,14 +299,12 @@ app.get('/configure', (req, res) => {
         }
 
         function copyUrl() {
-            const url = document.getElementById('manifestUrl').textContent;
-            navigator.clipboard.writeText(url);
+            navigator.clipboard.writeText(document.getElementById('manifestUrl').textContent);
             alert('Copied!');
         }
 
         function installAddon() {
-            const url = document.getElementById('manifestUrl').textContent;
-            window.location.href = 'stremio://' + url;
+            window.location.href = 'stremio://' + document.getElementById('manifestUrl').textContent;
         }
 
         addService();
@@ -315,14 +314,44 @@ app.get('/configure', (req, res) => {
     `)
 })
 
-// Mount Stremio addon using serveHTTP
-const addonInterface = builder.getInterface()
-serveHTTP(addonInterface, {
-    port: process.env.PORT || 7000,
-    server: app
+// Manifest routes
+app.get('/manifest.json', (req, res) => {
+    res.json(manifest)
 })
 
-console.log(`✅ Debrid Health Check addon is running!`)
-console.log(`🏠 Home: http://127.0.0.1:${process.env.PORT || 7000} (redirects to configure)`)
-console.log(`⚙️  Configure: http://127.0.0.1:${process.env.PORT || 7000}/configure`)
-console.log(`📦 Install: http://127.0.0.1:${process.env.PORT || 7000}/manifest.json`)
+app.get('/:config/manifest.json', (req, res) => {
+    res.json(manifest)
+})
+
+// Stream routes
+app.get('/stream/:type/:id.json', async (req, res) => {
+    const result = await builder.getInterface().get({
+        type: req.params.type,
+        id: req.params.id,
+        config: {}
+    })
+    res.json(result)
+})
+
+app.get('/:config/stream/:type/:id.json', async (req, res) => {
+    try {
+        const configBase64 = req.params.config
+        const configJson = Buffer.from(configBase64, 'base64').toString('utf-8')
+        const config = JSON.parse(configJson)
+        
+        const result = await builder.getInterface().get({
+            type: req.params.type,
+            id: req.params.id,
+            config: config
+        })
+        res.json(result)
+    } catch (error) {
+        res.json({ streams: [] })
+    }
+})
+
+const port = process.env.PORT || 7000
+app.listen(port, () => {
+    console.log(`✅ Running on http://127.0.0.1:${port}`)
+    console.log(`⚙️  Configure: http://127.0.0.1:${port}/configure`)
+})
