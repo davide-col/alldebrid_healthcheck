@@ -1,5 +1,5 @@
 // addon.js
-// Debrid Health Check — Stremio add-on with sleek /configure UI
+// Debrid Health Check — Stremio add-on with sleek /configure UI + dynamic manifest cfg
 
 const http = require('http');
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
@@ -16,8 +16,8 @@ async function fetchWithTimeout(url, timeoutSec) {
   }
 }
 
-// ---- manifest ----
-const manifest = {
+// ---- manifest (base) ----
+const baseManifest = {
   id: 'com.example.debrid-health',
   version: '1.0.0',
   name: 'Debrid Health Check',
@@ -41,7 +41,7 @@ const manifest = {
             timeout: 5,
             enabled: true,
             showSuccess: true,
-            showError: true
+            showError: false
           }
         ],
         null,
@@ -51,7 +51,7 @@ const manifest = {
   ]
 };
 
-const builder = new addonBuilder(manifest);
+const builder = new addonBuilder(baseManifest);
 
 // ---- stream handler ----
 builder.defineStreamHandler(async (args) => {
@@ -70,7 +70,7 @@ builder.defineStreamHandler(async (args) => {
         timeout: 5,
         enabled: true,
         showSuccess: true,
-        showError: true
+        showError: false
       }
     ];
   }
@@ -112,31 +112,33 @@ builder.defineStreamHandler(async (args) => {
       ms = Date.now() - t0;
     }
 
-    // Compact, user-friendly titles and descriptions using existing values
     const display =
       type === 'alldebrid' ? 'AllDebrid' :
       type === 'real-debrid' ? 'Real‑Debrid' :
       String(type);
 
+    let host = '';
+    try { host = new URL(pingUrl).host; } catch { host = pingUrl; }
+
     if (ok && showSuccess) {
       streams.push({
-        title: `✅ Up • ${serviceLabel} • ${ms}ms`,
+        title: `✅ Up • ${display} • ${ms}ms`,
         description: `API ${statusText} • ${host}`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/ok`
-    });
+      });
     } else if (!ok && showError) {
       streams.push({
-        title: `❌ Down • ${serviceLabel} • ${ms}ms`,
+        title: `❌ Down • ${display} • ${ms}ms`,
         description: `API ${statusText} • ${host}`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/down`
-    });
+      });
     }
   }
 
   return { streams };
 });
 
-// ---- pretty /configure UI with Install + Copy buttons ----
+// ---- pretty /configure UI with dynamic install + copy ----
 const CONFIG_HTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -233,7 +235,7 @@ const defaults = () => ({
   timeout: 5,
   enabled: true,
   showSuccess: true,
-  showError: true
+  showError: false
 });
 const state = [];
 
@@ -271,7 +273,8 @@ function render() {
     el.querySelectorAll('[data-k]').forEach(ctrl => {
       ctrl.oninput = ctrl.onchange = () => {
         const k = ctrl.getAttribute('data-k');
-        let v = ctrl.type === 'checkbox' ? el.querySelector('[data-k="'+k+'"]').checked : el.querySelector('[data-k="'+k+'"]').value;
+        const input = el.querySelector('[data-k="'+k+'"]');
+        let v = input.type === 'checkbox' ? input.checked : input.value;
         if (k === 'timeout') v = Math.max(1, parseInt(v || '5', 10));
         state[i][k] = v;
       };
@@ -283,19 +286,24 @@ function render() {
 
 addBtn.onclick = () => { state.push(defaults()); render(); };
 
+// Generate install URL that carries cfg in base64
 genBtn.onclick = () => {
   const json = JSON.stringify(state, null, 2);
   jsonOut.value = json;
-  const manifestUrl = location.origin + '/manifest.json';
+  const b64 = btoa(unescape(encodeURIComponent(json)));
+  const manifestUrl = location.origin + '/manifest.json?cfg=' + encodeURIComponent(b64);
   installUrl.value = manifestUrl;
   installBtn.style.display = 'inline-block';
   copyUrlBtn.style.display = 'inline-block';
   copyJsonBtn.style.display = 'inline-block';
 };
 
+// Launch Stremio install (strip protocol for stremio://)
 installBtn.onclick = () => {
-  const url = installUrl.value;
-  if (url) window.location.href = 'stremio://' + url.replace('https://', '');
+  const url = (installUrl.value || '').trim();
+  if (!url) return;
+  const noProto = url.replace(/^https?:\\/\\//i, '');
+  window.location.href = 'stremio://' + noProto;
 };
 
 copyUrlBtn.onclick = async () => {
@@ -324,20 +332,42 @@ render();
 </script>
 </body></html>`;
 
-// ---- HTTP server combining /configure with SDK router ----
+// ---- HTTP server: dynamic manifest + /configure + SDK router ----
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
 const server = http.createServer((req, res) => {
+  if (req.url.startsWith('/manifest.json')) {
+    try {
+      const u = new URL(req.url, 'http://localhost');
+      const cfg = u.searchParams.get('cfg');
+      // Deep copy base manifest to avoid mutating
+      const dynamic = JSON.parse(JSON.stringify(baseManifest));
+      if (cfg) {
+        const decoded = Buffer.from(decodeURIComponent(cfg), 'base64').toString('utf8');
+        // Validate JSON so we don't break the manifest
+        JSON.parse(decoded);
+        if (Array.isArray(dynamic.config) && dynamic.config.length) {
+          dynamic.config[0].default = decoded;
+        }
+      }
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(dynamic));
+      return;
+    } catch {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(baseManifest));
+      return;
+    }
+  }
+
   if (req.url === '/configure') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(CONFIG_HTML);
     return;
   }
-  router(req, res, () => {
-    res.statusCode = 404;
-    res.end();
-  });
+
+  router(req, res, () => { res.statusCode = 404; res.end(); });
 });
 
 const PORT = process.env.PORT || 7000;
