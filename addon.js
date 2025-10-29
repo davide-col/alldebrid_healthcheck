@@ -288,10 +288,8 @@ genBtn.onclick = () => {
 };
 
 installBtn.onclick = () => {
-  const url = (installUrl.value || '').trim();
-  if (!url) return;
-  const noProto = url.replace(/^https?:\/\//i, ''); // -> alldebrid-healthcheck.onrender.com/manifest.json
-  window.location.href = 'stremio://' + noProto;
+  const url = installUrl.value;
+  if (url) window.location.href = 'stremio://' + url;
 };
 
 copyUrlBtn.onclick = async () => {
@@ -323,7 +321,7 @@ render();
 // ---- HTTP server combining /configure with SDK router ----
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
- 
+
 const server = http.createServer((req, res) => {
   if (req.url === '/configure') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
