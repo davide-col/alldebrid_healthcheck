@@ -325,6 +325,11 @@ app.get('/configure', (req, res) => {
             font-family: monospace;
             font-size: 12px;
         }
+        .helper-text {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-top: 3px;
+        }
     </style>
 </head>
 <body>
@@ -337,10 +342,10 @@ app.get('/configure', (req, res) => {
     <div class="info">
         <strong>How to use:</strong>
         <ol>
-            <li>Add debrid services to monitor</li>
-            <li>Configure each service settings</li>
-            <li>Generate install URL</li>
-            <li>Install in Stremio</li>
+            <li>Add debrid services to monitor (AllDebrid, Real-Debrid, or custom)</li>
+            <li>Configure each service (URL, timeout, display options)</li>
+            <li>Generate install URL and add to Stremio</li>
+            <li>Use with AIOStreams Groups to block streams when down</li>
         </ol>
     </div>
 
@@ -369,7 +374,7 @@ app.get('/configure', (req, res) => {
             div.id = 'service-' + id;
             div.innerHTML = '<button class="remove-btn" onclick="removeService(' + id + ')">✕</button>' +
                 '<h3>Service #' + (id + 1) + '</h3>' +
-                '<label>Type:</label>' +
+                '<label>Service Type:</label>' +
                 '<select id="type-' + id + '" onchange="updateDefaults(' + id + ')">' +
                 '<option value="alldebrid">AllDebrid</option>' +
                 '<option value="realdebrid">Real-Debrid</option>' +
@@ -377,11 +382,13 @@ app.get('/configure', (req, res) => {
                 '</select>' +
                 '<label>Ping URL:</label>' +
                 '<input type="text" id="url-' + id + '" value="https://api.alldebrid.com/v4/ping" />' +
-                '<label>Timeout (ms):</label>' +
-                '<input type="number" id="timeout-' + id + '" value="5000" />' +
+                '<div class="helper-text">API endpoint to check</div>' +
+                '<label>Timeout (seconds):</label>' +
+                '<input type="number" id="timeout-' + id + '" value="5" min="1" max="30" step="1" />' +
+                '<div class="helper-text">How long to wait for response (5 seconds recommended)</div>' +
                 '<label><input type="checkbox" id="enabled-' + id + '" checked /> Enabled</label>' +
-                '<label><input type="checkbox" id="success-' + id + '" checked /> Show success message</label>' +
-                '<label><input type="checkbox" id="error-' + id + '" checked /> Show error message</label>';
+                '<label><input type="checkbox" id="success-' + id + '" checked /> Show success message (dummy stream when UP)</label>' +
+                '<label><input type="checkbox" id="error-' + id + '" checked /> Show error message (dummy stream when DOWN)</label>';
             document.getElementById('services').appendChild(div);
         }
 
@@ -412,7 +419,7 @@ app.get('/configure', (req, res) => {
                     pingUrl: document.getElementById('url-' + i).value,
                     showSuccess: document.getElementById('success-' + i).checked,
                     showError: document.getElementById('error-' + i).checked,
-                    timeout: parseInt(document.getElementById('timeout-' + i).value)
+                    timeout: parseInt(document.getElementById('timeout-' + i).value) * 1000
                 });
             }
             
@@ -447,12 +454,29 @@ app.get('/configure', (req, res) => {
     `)
 })
 
-// Mount addon interface
-app.use(builder.getInterface())
+// Mount Stremio addon routes
+const addonInterface = builder.getInterface()
+
+app.get('/manifest.json', (req, res) => {
+    addonInterface(req, res)
+})
+
+app.get('/:config/manifest.json', (req, res) => {
+    addonInterface(req, res)
+})
+
+app.get('/stream/:type/:id.json', (req, res) => {
+    addonInterface(req, res)
+})
+
+app.get('/:config/stream/:type/:id.json', (req, res) => {
+    addonInterface(req, res)
+})
 
 const port = process.env.PORT || 7000
 app.listen(port, () => {
-    console.log(`Addon running on http://127.0.0.1:${port}`)
-    console.log(`Home: http://127.0.0.1:${port}`)
-    console.log(`Configure: http://127.0.0.1:${port}/configure`)
+    console.log(`✅ Debrid Health Check addon is running!`)
+    console.log(`🏠 Home: http://127.0.0.1:${port}`)
+    console.log(`⚙️  Configure: http://127.0.0.1:${port}/configure`)
+    console.log(`📦 Install: http://127.0.0.1:${port}/manifest.json`)
 })
