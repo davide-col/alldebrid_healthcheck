@@ -289,7 +289,7 @@ genBtn.onclick = () => {
 
 installBtn.onclick = () => {
   const url = installUrl.value;
-  if (url) window.location.href = 'stremio://' + url;
+  if (url) window.location.href = 'stremio://' + url.replace('https://', '');
 };
 
 copyUrlBtn.onclick = async () => {
