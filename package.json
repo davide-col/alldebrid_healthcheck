@@ -1,6 +1,6 @@
 {
   "name": "debrid-healthcheck-addon",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Configurable debrid health checker",
   "main": "addon.js",
   "scripts": {

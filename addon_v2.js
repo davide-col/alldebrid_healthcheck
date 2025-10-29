@@ -101,7 +101,140 @@ builder.defineStreamHandler(async (args) => {
 // Create Express app
 const app = express()
 
-// Configuration page - MUST come before serveHTTP
+// Landing page at root
+app.get('/', (req, res) => {
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debrid Health Check</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            max-width: 600px;
+        }
+        .logo {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 2.5em;
+            margin: 20px 0;
+            font-weight: 700;
+        }
+        .version {
+            font-size: 1.2em;
+            opacity: 0.8;
+            margin-bottom: 10px;
+        }
+        .description {
+            font-size: 1.1em;
+            opacity: 0.9;
+            margin: 20px 0 40px;
+            line-height: 1.6;
+        }
+        .features {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 30px 0;
+            text-align: left;
+        }
+        .features ul {
+            list-style: none;
+            padding: 0;
+        }
+        .features li {
+            padding: 8px 0;
+            font-size: 1.05em;
+        }
+        .features li:before {
+            content: "✓ ";
+            color: #4ade80;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        button {
+            background: #fff;
+            color: #667eea;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2em;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: 600;
+            margin: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        .secondary {
+            background: transparent;
+            color: #fff;
+            border: 2px solid #fff;
+        }
+        a {
+            color: #fff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🔧</div>
+        <h1>Debrid Health Check</h1>
+        <div class="version">v2.0.0</div>
+        <div class="description">
+            Monitor your debrid services and control streaming based on their availability
+        </div>
+
+        <div class="features">
+            <strong style="font-size: 1.2em; display: block; margin-bottom: 15px;">Features:</strong>
+            <ul>
+                <li>Monitor AllDebrid, Real-Debrid, or custom services</li>
+                <li>Configure multiple services simultaneously</li>
+                <li>Custom timeout and message settings</li>
+                <li>Works with AIOStreams Groups</li>
+                <li>Block streams when services are down</li>
+            </ul>
+        </div>
+
+        <button onclick="window.location.href='/configure'">
+            ⚙️ Configure Addon
+        </button>
+        <br>
+        <button class="secondary" onclick="window.location.href='/manifest.json'">
+            📦 Install Default Config
+        </button>
+
+        <div style="margin-top: 40px; opacity: 0.7; font-size: 0.9em;">
+            <a href="https://github.com/davide-col/alldebrid_healthcheck" target="_blank">
+                GitHub Repository
+            </a>
+        </div>
+    </div>
+</body>
+</html>
+    `)
+})
+
+// Configuration page
 app.get('/configure', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -130,6 +263,15 @@ app.get('/configure', (req, res) => {
         h1 { 
             color: #fff; 
             margin: 0;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #7b5bf5;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
         }
         .info {
             background: #2a2d3a;
@@ -191,6 +333,8 @@ app.get('/configure', (req, res) => {
     </style>
 </head>
 <body>
+    <a href="/" class="back-link">← Back to Home</a>
+    
     <div class="header">
         <h1>🔧 Configure Debrid Health Check</h1>
     </div>
@@ -323,6 +467,6 @@ serveHTTP(addonInterface, {
 })
 
 console.log(`✅ Debrid Health Check addon is running!`)
-console.log(`🏠 Home: http://127.0.0.1:${process.env.PORT || 7000} (redirects to configure)`)
+console.log(`🏠 Home: http://127.0.0.1:${process.env.PORT || 7000}`)
 console.log(`⚙️  Configure: http://127.0.0.1:${process.env.PORT || 7000}/configure`)
 console.log(`📦 Install: http://127.0.0.1:${process.env.PORT || 7000}/manifest.json`)
