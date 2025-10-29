@@ -428,9 +428,14 @@ app.get('/configure', (req, res) => {
                 return;
             }
             
-            const config = encodeURIComponent(JSON.stringify(services));
+            const configObj = {
+                services: JSON.stringify(services)
+            };
+            
+            const configJson = JSON.stringify(configObj);
+            const configBase64 = btoa(unescape(encodeURIComponent(configJson)));
             const baseUrl = window.location.origin;
-            const url = baseUrl + '/' + btoa(JSON.stringify({services: config})) + '/manifest.json';
+            const url = baseUrl + '/' + configBase64 + '/manifest.json';
             
             document.getElementById('manifestUrl').textContent = url;
             document.getElementById('result').style.display = 'block';
