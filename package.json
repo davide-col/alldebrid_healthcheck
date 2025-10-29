@@ -1,11 +1,13 @@
 {
-  "name": "debrid-healthcheck-addon",
-  "version": "2.0.0",
-  "main": "addon.js",
-  "scripts": {
-    "start": "node addon.js"
-  },
+  "name": "debrid-health-stremio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": { "node": ">=18" },
   "dependencies": {
-    "stremio-addon-sdk": "^1.6.0"
+    "stremio-addon-sdk": "^1.0.2"
+  },
+  "scripts": {
+    "start": "node server.js"
   }
 }
