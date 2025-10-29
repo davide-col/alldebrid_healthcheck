@@ -41,7 +41,7 @@ const manifest = {
             timeout: 5,
             enabled: true,
             showSuccess: true,
-            showError: false
+            showError: true
           }
         ],
         null,
@@ -70,7 +70,7 @@ builder.defineStreamHandler(async (args) => {
         timeout: 5,
         enabled: true,
         showSuccess: true,
-        showError: false
+        showError: true
       }
     ];
   }
@@ -233,7 +233,7 @@ const defaults = () => ({
   timeout: 5,
   enabled: true,
   showSuccess: true,
-  showError: false
+  showError: true
 });
 const state = [];
 
