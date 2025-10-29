@@ -112,16 +112,22 @@ builder.defineStreamHandler(async (args) => {
       ms = Date.now() - t0;
     }
 
+    // Compact, user-friendly titles and descriptions using existing values
+    const display =
+      type === 'alldebrid' ? 'AllDebrid' :
+      type === 'real-debrid' ? 'Real‑Debrid' :
+      String(type);
+
     if (ok && showSuccess) {
       streams.push({
-        title: `OK • ${type} • ${ms}ms`,
-        description: `Healthy (${statusText})`,
+        title: `✅ ${display} • ${ms}ms`,
+        description: `API up • ${statusText}`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/ok`
       });
     } else if (!ok && showError) {
       streams.push({
-        title: `DOWN • ${type} • ${ms}ms`,
-        description: `Unreachable (${statusText})`,
+        title: `❌ ${display} • ${ms}ms`,
+        description: `API down • ${statusText}`,
         url: `https://example.invalid/health/${encodeURIComponent(type)}/down`
       });
     }
@@ -265,7 +271,7 @@ function render() {
     el.querySelectorAll('[data-k]').forEach(ctrl => {
       ctrl.oninput = ctrl.onchange = () => {
         const k = ctrl.getAttribute('data-k');
-        let v = ctrl.type === 'checkbox' ? ctrl.checked : ctrl.value;
+        let v = ctrl.type === 'checkbox' ? el.querySelector('[data-k="'+k+'"]').checked : el.querySelector('[data-k="'+k+'"]').value;
         if (k === 'timeout') v = Math.max(1, parseInt(v || '5', 10));
         state[i][k] = v;
       };
