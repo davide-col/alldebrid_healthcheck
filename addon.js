@@ -1,4 +1,3 @@
-const { addonBuilder } = require('stremio-addon-sdk')
 const express = require('express')
 const https = require('https')
 const http = require('http')
@@ -26,8 +25,6 @@ const manifest = {
     idPrefixes: ['tt'],
     catalogs: []
 }
-
-const builder = new addonBuilder(manifest)
 
 function parseConfig(args) {
     const config = args.config || {}
@@ -66,33 +63,6 @@ async function checkServiceHealth(service) {
         })
     })
 }
-
-builder.defineStreamHandler(async (args) => {
-    const config = parseConfig(args)
-    const streams = []
-    
-    for (const service of config.services) {
-        if (!service.enabled) continue
-        
-        const result = await checkServiceHealth(service)
-        
-        if (!result.healthy && service.showError) {
-            streams.push({
-                name: `⚠️ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
-                title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is DOWN`,
-                url: service.pingUrl
-            })
-        } else if (result.healthy && service.showSuccess) {
-            streams.push({
-                name: `✓ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
-                title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is UP`,
-                url: service.pingUrl
-            })
-        }
-    }
-    
-    return { streams }
-})
 
 const app = express()
 
@@ -325,33 +295,88 @@ app.get('/:config/manifest.json', (req, res) => {
 
 // Stream routes
 app.get('/stream/:type/:id.json', async (req, res) => {
-    const result = await builder.getInterface().get({
-        type: req.params.type,
-        id: req.params.id,
-        config: {}
-    })
-    res.json(result)
+    try {
+        const args = { 
+            type: req.params.type, 
+            id: req.params.id, 
+            config: {} 
+        }
+        
+        const config = parseConfig(args)
+        const streams = []
+        
+        for (const service of config.services) {
+            if (!service.enabled) continue
+            
+            const result = await checkServiceHealth(service)
+            
+            if (!result.healthy && service.showError) {
+                streams.push({
+                    name: `⚠️ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
+                    title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is DOWN`,
+                    url: service.pingUrl
+                })
+            } else if (result.healthy && service.showSuccess) {
+                streams.push({
+                    name: `✓ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
+                    title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is UP`,
+                    url: service.pingUrl
+                })
+            }
+        }
+        
+        res.json({ streams })
+    } catch (error) {
+        console.error('Stream error:', error)
+        res.json({ streams: [] })
+    }
 })
 
 app.get('/:config/stream/:type/:id.json', async (req, res) => {
     try {
         const configBase64 = req.params.config
         const configJson = Buffer.from(configBase64, 'base64').toString('utf-8')
-        const config = JSON.parse(configJson)
+        const configData = JSON.parse(configJson)
         
-        const result = await builder.getInterface().get({
-            type: req.params.type,
-            id: req.params.id,
-            config: config
-        })
-        res.json(result)
+        const args = { 
+            type: req.params.type, 
+            id: req.params.id, 
+            config: configData 
+        }
+        
+        const config = parseConfig(args)
+        const streams = []
+        
+        for (const service of config.services) {
+            if (!service.enabled) continue
+            
+            const result = await checkServiceHealth(service)
+            
+            if (!result.healthy && service.showError) {
+                streams.push({
+                    name: `⚠️ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
+                    title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is DOWN`,
+                    url: service.pingUrl
+                })
+            } else if (result.healthy && service.showSuccess) {
+                streams.push({
+                    name: `✓ ${DEFAULT_SERVICES[service.id]?.name || service.id}`,
+                    title: `${DEFAULT_SERVICES[service.id]?.name || service.id} is UP`,
+                    url: service.pingUrl
+                })
+            }
+        }
+        
+        res.json({ streams })
     } catch (error) {
+        console.error('Config stream error:', error)
         res.json({ streams: [] })
     }
 })
 
 const port = process.env.PORT || 7000
 app.listen(port, () => {
-    console.log(`✅ Running on http://127.0.0.1:${port}`)
+    console.log(`✅ Debrid Health Check running on port ${port}`)
     console.log(`⚙️  Configure: http://127.0.0.1:${port}/configure`)
+    console.log(`📦 Manifest: http://127.0.0.1:${port}/manifest.json`)
 })
